@@ -95,9 +95,9 @@ let test_wire_numbers_round_trip () =
 
 (* Absent optional fields must be omitted, not null. *)
 
-let query ?limit ?scan_index_forward () =
+let query ?limit ?scan_index_forward ?exclusive_start_key () =
   Dynamodb.Action.Query.(
-    make ?limit ?scan_index_forward ~table_name:"example-table"
+    make ?limit ?scan_index_forward ?exclusive_start_key ~table_name:"example-table"
       ~key_condition_expression:"#pk = :pk"
       ~expression_attribute_names:[ "#pk", "pk" ]
       ~expression_attribute_values:(Item.singleton ":pk" (Value.String "alice"))
@@ -105,16 +105,38 @@ let query ?limit ?scan_index_forward () =
     |> yojson_of_request)
 
 let test_query_omits_absent_fields () =
-  Alcotest.check json "no Limit / ScanIndexForward"
-    (parse
-       {|{"TableName":"example-table","KeyConditionExpression":"#pk = :pk","ExpressionAttributeNames":{"#pk":"pk"},"ExpressionAttributeValues":{":pk":{"S":"alice"}}}|})
-    (query ())
+  Alcotest.(check string)
+    "unchanged bytes without optional fields"
+    {|{"TableName":"example-table","KeyConditionExpression":"#pk = :pk","ExpressionAttributeNames":{"#pk":"pk"},"ExpressionAttributeValues":{":pk":{"S":"alice"}}}|}
+    (query () |> Yojson.Safe.to_string)
 
 let test_query_emits_limit_and_direction () =
   Alcotest.check json "Limit and ScanIndexForward"
     (parse
        {|{"TableName":"example-table","KeyConditionExpression":"#pk = :pk","ExpressionAttributeNames":{"#pk":"pk"},"ExpressionAttributeValues":{":pk":{"S":"alice"}},"Limit":10,"ScanIndexForward":false}|})
     (query ~limit:10 ~scan_index_forward:false ())
+
+let test_query_emits_exclusive_start_key () =
+  Alcotest.check json "ExclusiveStartKey"
+    (parse
+       {|{"TableName":"example-table","KeyConditionExpression":"#pk = :pk","ExpressionAttributeNames":{"#pk":"pk"},"ExpressionAttributeValues":{":pk":{"S":"alice"}},"ExclusiveStartKey":{"pk":{"S":"alice"}}}|})
+    (query ~exclusive_start_key:alice_key ())
+
+let test_query_decodes_last_evaluated_key () =
+  let Dynamodb.Action.Query.{ items; last_evaluated_key } =
+    Dynamodb.Action.Query.response_of_yojson
+      (parse
+         {|{"Items":[{"pk":{"S":"alice"},"age":{"N":"30"}}],"LastEvaluatedKey":{"pk":{"S":"alice"}},"Count":1}|})
+  in
+  Alcotest.(check (list item)) "items" [ alice ] items;
+  Alcotest.(check (option item)) "LastEvaluatedKey" (Some alice_key) last_evaluated_key
+
+let test_query_decodes_absent_last_evaluated_key () =
+  let Dynamodb.Action.Query.{ items; last_evaluated_key } =
+    Dynamodb.Action.Query.response_of_yojson (parse {|{"Items":[{"pk":{"S":"alice"}}]}|})
+  in
+  Alcotest.(check (list item)) "items" [ alice_key ] items;
+  Alcotest.(check (option item)) "no LastEvaluatedKey" None last_evaluated_key
 
 (* Client helpers through the effect *)
 
@@ -128,6 +150,69 @@ let test_get () =
     [ "GetItem", parse {|{"TableName":"example-table","Key":{"pk":{"S":"alice"}}}|} ]
     !seen;
   Alcotest.(check (result (option item) reject)) "response" (Ok (Some alice)) result
+
+let test_query_follows_pagination () =
+  let pages =
+    ref
+      [
+        {|{"Items":[{"pk":{"S":"a"}},{"pk":{"S":"b"}}],"LastEvaluatedKey":{"pk":{"S":"b"}}}|};
+        {|{"Items":[{"pk":{"S":"c"}},{"pk":{"S":"d"}}]}|};
+      ]
+  in
+  let requests = ref [] in
+  let respond ~action ~body =
+    Alcotest.(check string) "action" "Query" action;
+    requests := parse body :: !requests;
+    match !pages with
+    | page :: rest ->
+      pages := rest;
+      Ok (parse page)
+    | [] -> Alcotest.fail "queried past the last page"
+  in
+  let result =
+    with_stub ~respond @@ fun () ->
+    Client.query db ~key_condition_expression:"#pk = :pk"
+      ~expression_attribute_names:[ "#pk", "pk" ]
+      ~expression_attribute_values:(Item.singleton ":pk" (Value.String "alice"))
+      ~filter_expression:"attribute_exists(age)" ~scan_index_forward:false
+  in
+  Alcotest.(check (result (list item) reject))
+    "all items in order"
+    (Ok (List.map (fun pk -> Item.singleton "pk" (Value.String pk)) [ "a"; "b"; "c"; "d" ]))
+    result;
+  Alcotest.(check (list json))
+    "continuation key and query options"
+    [
+      parse
+        {|{"TableName":"example-table","KeyConditionExpression":"#pk = :pk","ExpressionAttributeNames":{"#pk":"pk"},"ExpressionAttributeValues":{":pk":{"S":"alice"}},"FilterExpression":"attribute_exists(age)","ScanIndexForward":false}|};
+      parse
+        {|{"TableName":"example-table","KeyConditionExpression":"#pk = :pk","ExpressionAttributeNames":{"#pk":"pk"},"ExpressionAttributeValues":{":pk":{"S":"alice"}},"FilterExpression":"attribute_exists(age)","ScanIndexForward":false,"ExclusiveStartKey":{"pk":{"S":"b"}}}|};
+    ]
+    (List.rev !requests)
+
+let test_query_limit_returns_one_page () =
+  let seen, record_response =
+    record
+      ~response:
+        (Ok
+           (parse
+              {|{"Items":[{"pk":{"S":"alice"},"age":{"N":"30"}}],"LastEvaluatedKey":{"pk":{"S":"alice"}}}|}))
+  in
+  let respond ~action ~body =
+    if !seen <> [] then Alcotest.fail "queried past the first page with limit";
+    record_response ~action ~body
+  in
+  let result =
+    with_stub ~respond @@ fun () ->
+    Client.query ~limit:10 db ~key_condition_expression:"#pk = :pk"
+      ~expression_attribute_names:[ "#pk", "pk" ]
+      ~expression_attribute_values:(Item.singleton ":pk" (Value.String "alice"))
+  in
+  Alcotest.(check (result (list item) reject)) "first page only" (Ok [ alice ]) result;
+  Alcotest.(check (list (pair string json)))
+    "one request with Limit"
+    [ "Query", query ~limit:10 () ]
+    !seen
 
 let test_scan_follows_pagination () =
   let pages =
@@ -257,10 +342,17 @@ let () =
         [
           Alcotest.test_case "omits absent fields" `Quick test_query_omits_absent_fields;
           Alcotest.test_case "emits limit and direction" `Quick test_query_emits_limit_and_direction;
+          Alcotest.test_case "emits exclusive start key" `Quick test_query_emits_exclusive_start_key;
+          Alcotest.test_case "decodes last evaluated key" `Quick
+            test_query_decodes_last_evaluated_key;
+          Alcotest.test_case "decodes absent last evaluated key" `Quick
+            test_query_decodes_absent_last_evaluated_key;
         ] );
       ( "client",
         [
           Alcotest.test_case "get" `Quick test_get;
+          Alcotest.test_case "query follows pagination" `Quick test_query_follows_pagination;
+          Alcotest.test_case "query limit returns one page" `Quick test_query_limit_returns_one_page;
           Alcotest.test_case "scan follows pagination" `Quick test_scan_follows_pagination;
           Alcotest.test_case "update requests ALL_NEW" `Quick test_update_requests_all_new;
           Alcotest.test_case "transact write" `Quick test_transact_write;

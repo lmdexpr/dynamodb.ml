@@ -46,12 +46,19 @@ let get { table } ~key =
 
 let query ?filter_expression ?expression_attribute_names ?limit ?scan_index_forward { table }
   ~key_condition_expression ~expression_attribute_values =
-  let* Action.Query.{ items } =
-    Action.Query.make ?filter_expression ?expression_attribute_names ?limit ?scan_index_forward
-      ~table_name:table ~key_condition_expression ~expression_attribute_values ()
-    |> Action.Query.perform
+  let rec go acc exclusive_start_key =
+    let* Action.Query.{ items; last_evaluated_key } =
+      Action.Query.make ?filter_expression ?expression_attribute_names ?limit ?scan_index_forward
+        ?exclusive_start_key ~table_name:table ~key_condition_expression
+        ~expression_attribute_values ()
+      |> Action.Query.perform
+    in
+    let acc = List.rev_append items acc in
+    match limit, last_evaluated_key with
+    | None, Some key -> go acc (Some key)
+    | _ -> Ok (List.rev acc)
   in
-  Ok items
+  go [] None
 
 let scan { table } =
   let rec go acc exclusive_start_key =

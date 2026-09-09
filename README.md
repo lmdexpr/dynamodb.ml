@@ -6,8 +6,8 @@ OCaml client for the [Amazon DynamoDB HTTP API][api] (JSON 1.0 protocol).
   HTTP goes through the effect `Dynamodb.Effects.Call`. Depends on `yojson`, `base64` and `ppx_yojson_conv`.
 - `dynamodb-cohttp-eio`: handles that effect with [cohttp-eio][cohttp-eio], signing with [sigv4][sigv4].
 
-Supported: `PutItem`, `GetItem`, `DeleteItem`, `UpdateItem` (`ReturnValues = ALL_NEW`), `Query` (one page), `Scan` (all pages), `TransactWriteItems` (`Put` / `Delete`).
-Not supported: `BatchGetItem`, `BatchWriteItem`, `Query` pagination, `IndexName`, `ConsistentRead`, `ProjectionExpression`, other `ReturnValues`, and `Update` / `ConditionCheck` transact items.
+Supported: `PutItem`, `GetItem`, `DeleteItem`, `UpdateItem` (`ReturnValues = ALL_NEW`), `Query` (all pages without `limit`, one page with `limit`), `Scan` (all pages), `TransactWriteItems` (`Put` / `Delete`).
+Not supported: `BatchGetItem`, `BatchWriteItem`, `IndexName`, `ConsistentRead`, `ProjectionExpression`, other `ReturnValues`, and `Update` / `ConditionCheck` transact items.
 
 [api]: https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/Welcome.html
 [sigv4]: https://github.com/lmdexpr/sigv4.ml

@@ -51,7 +51,8 @@ val query :
   key_condition_expression:string ->
   expression_attribute_values:Item.t ->
   (Item.t list, Error.t) result
-(** One page. *)
+(** All pages when [limit] is absent. With [limit], returns only the first page; [limit] caps
+    evaluated items per page, before filtering. *)
 
 val scan : t -> (Item.t list, Error.t) result
 (** All pages. *)
