@@ -1,0 +1,13 @@
+(library
+ (name dynamodb_cohttp_eio)
+ (public_name dynamodb-cohttp-eio)
+ (libraries
+  dynamodb
+  sigv4
+  sigv4-cohttp-eio
+  eio
+  eio.core
+  cohttp-eio
+  uri
+  http
+  yojson))

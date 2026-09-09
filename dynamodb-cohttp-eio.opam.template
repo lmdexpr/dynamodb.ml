@@ -1,0 +1,5 @@
+# sigv4 is not on the opam repository yet.
+pin-depends: [
+  ["sigv4.dev" "git+https://github.com/lmdexpr/sigv4.ml.git#9a2e7247de94b9023e41f0217e8b9bc7eb14b926"]
+  ["sigv4-cohttp-eio.dev" "git+https://github.com/lmdexpr/sigv4.ml.git#9a2e7247de94b9023e41f0217e8b9bc7eb14b926"]
+]

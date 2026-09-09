@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      # Persist dune's content-addressed build cache so that the locked
+      # dependencies (compiler included) are not rebuilt from source every run.
+      DUNE_CACHE: enabled
+      DUNE_CACHE_STORAGE_MODE: copy
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Only the bootstrap `dune` binary lives in the opam switch; every project
+      # dependency is built hermetically from dune.lock/ by dune's package
+      # management, and ocamlformat is a dune tool.
+      - name: Install opam
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends opam bubblewrap
+
+      - name: Cache opam (dune bootstrap)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.opam
+          key: opam-bootstrap-${{ runner.os }}-dune3.24
+
+      - name: Cache dune toolchain (OCaml compiler)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/dune/toolchains
+          key: dune-toolchain-v1-${{ runner.os }}-${{ hashFiles('dune.lock/ocaml.*.pkg', 'dune.lock/ocaml-compiler.*.pkg', 'dune.lock/ocaml-base-compiler.*.pkg', 'dune.lock/ocaml-config.*.pkg') }}
+
+      - name: Cache dune (build cache + git repos + _build)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/dune/db
+            ~/.cache/dune/git-repo
+            _build
+          key: dune-cache-v1-${{ runner.os }}-${{ hashFiles('dune.lock/**') }}
+          restore-keys: |
+            dune-cache-v1-${{ runner.os }}-
+
+      - name: Set up dune
+        run: |
+          opam init --disable-sandboxing -y
+          opam install dune -y
+
+      - name: Build
+        run: opam exec -- dune build @all
+
+      - name: Check formatting
+        run: |
+          opam exec -- dune tools install ocamlformat
+          opam exec -- dune build @fmt
+
+      - name: Run tests
+        run: opam exec -- dune runtest
+
+      - name: Trim dune build cache
+        run: opam exec -- dune cache trim --size 3GB

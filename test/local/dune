@@ -1,0 +1,5 @@
+; Manual check against DynamoDB Local: dune exec test/local/local.exe -- http://127.0.0.1:8000/ table
+
+(executable
+ (name local)
+ (libraries dynamodb dynamodb-cohttp-eio eio eio_main cohttp-eio uri yojson))

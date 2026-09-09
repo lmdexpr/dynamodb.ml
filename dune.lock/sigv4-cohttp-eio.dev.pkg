@@ -1,0 +1,15 @@
+(version dev)
+
+(build
+ (all_platforms ((dune))))
+
+(depends
+ (all_platforms
+  (ocaml dune sigv4 eio cohttp-eio uri yojson)))
+
+(source
+ (fetch
+  (url
+   git+https://github.com/lmdexpr/sigv4.ml.git#9a2e7247de94b9023e41f0217e8b9bc7eb14b926)))
+
+(dev)

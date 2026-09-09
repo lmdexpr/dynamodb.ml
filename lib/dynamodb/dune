@@ -1,0 +1,8 @@
+(include_subdirs qualified)
+
+(library
+ (name dynamodb)
+ (public_name dynamodb)
+ (libraries yojson base64)
+ (preprocess
+  (pps ppx_yojson_conv)))
