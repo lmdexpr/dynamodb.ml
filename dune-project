@@ -18,14 +18,14 @@
 ;; sigv4 / sigv4-cohttp-eio are not yet published to the opam repository; pin them ; straight from the upstream repo.
 (pin
  (url
-  "git+https://github.com/lmdexpr/sigv4.ml.git#9a2e7247de94b9023e41f0217e8b9bc7eb14b926")
+  "git+https://github.com/lmdexpr/sigv4.ml.git#18b21b67a2befebb5364718240d051f15fb7efda")
  (package
   (name sigv4)
   (version "dev")))
 
 (pin
  (url
-  "git+https://github.com/lmdexpr/sigv4.ml.git#9a2e7247de94b9023e41f0217e8b9bc7eb14b926")
+  "git+https://github.com/lmdexpr/sigv4.ml.git#18b21b67a2befebb5364718240d051f15fb7efda")
  (package
   (name sigv4-cohttp-eio)
   (version "dev")))
